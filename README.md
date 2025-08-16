@@ -24,7 +24,7 @@ associated with TPE is significantly underestimated and more
 robust defense mechanisms are required.
 
 <p align='center'>  
-  <img src='https://github.com/HITLiXincodes/CFGAN/blob/main/images/whole.png' width='870'/>
+  <img src='https://github.com/HITLiXincodes/MTNet/blob/main/whole.png' width='870'/>
 </p>
 <p align='center'>  
   <em>Framework of MTNet.</em>
