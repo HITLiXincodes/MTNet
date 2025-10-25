@@ -32,6 +32,7 @@ robust defense mechanisms are required.
 
 ## How to use
 ### Train
+You can re-train the model easily by running the train.py file.
 ### Test
 ## Quick Start
 ## Citation
