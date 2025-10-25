@@ -1,54 +1,66 @@
-import os
-from options.test_options import TestOptions
-from data import create_dataset
-from models import create_model
-from utils import utils
-from PIL import Image
-from tqdm import tqdm
 import torch
-import time
+MAE_loss = torch.nn.L1Loss()
 
-if __name__ == '__main__':
-    opt = TestOptions().parse()  # get test options
-    opt.num_threads = 0   # test code only supports num_threads = 1
-    opt.batch_size = 1    # test code only supports batch_size = 1
-    opt.serial_batches = True  # disable data shuffling; comment this line if results on randomly chosen images are needed.
-    opt.no_flip = True
-    
-    dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
-    model = create_model(opt)      # create a model given opt.model and other options
-    if len(opt.pretrain_model_path):
-        model.load_pretrain_model()
-    else:
-        model.setup(opt)               # regular setup: load and print networks; create schedulers
+import cv2
+import numpy as np
 
-    if len(opt.save_as_dir):
-        save_dir = opt.save_as_dir
-    else:
-        save_dir = os.path.join(opt.results_dir, opt.name, '{}_{}'.format(opt.phase, opt.epoch))  
-        if opt.load_iter > 0:  # load_iter is 0 by default
-            save_dir = '{:s}_iter{:d}'.format(save_dir, opt.load_iter)
-    os.makedirs(save_dir, exist_ok=True)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
-    print('creating result directory', save_dir)
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+print("************ NOTE: The torch device is:", device)
 
-    network = model.netG
-    network.eval()
+# =================== import Dataset ======================
+import sys
+sys.path.append('/home/ubuntu/hog/MTNet/train')
+from Dataset import MyDataset
+from torch.utils.data import DataLoader
 
-    for i, data in tqdm(enumerate(dataset), total=len(dataset)):
+test_input_dir="/home/ubuntu/thumb_data/ce_test_en1_4"
+test_ground_dir='/home/ubuntu/thumb_data/ce_test_ori'
 
-        inp = data['LR']
-        with torch.no_grad():
-            start_time = time.time()
-            _,output_SR = network(inp)
+testing_dataset = MyDataset(train=False, lr_size=32, device=device, input_dir=test_input_dir,ground_dir=test_ground_dir)
+test_dataloader = DataLoader(testing_dataset, batch_size=8, shuffle=True)
 
-        img_path = data['LR_paths']     # get image paths
-        output_sr_img = utils.tensor_to_img(output_SR, normal=True)
+print('The number of testing images = %d' % len(testing_dataset))
 
-        save_path = os.path.join(save_dir, img_path[0].split('/')[-1]) 
-        save_img = Image.fromarray(output_sr_img)
-        save_img.save(save_path)
+# =================== import Mapping Network =====================
+from model import MTNetModel
+model_Generator = MTNetModel(device)
+pretrain_path="/home/ubuntu/hog/Ablation4-encry1/checkpoints/ab16_1/iter_202000_net_G.pth"
+model_Generator.load_pretrain_model(pretrain_path)
+model_Generator.netG.eval()
+# ========================================================
+
+# =================== Save models ===============
+import os
+os.makedirs('testing_files', exist_ok=True)
+os.makedirs('testing_files/Ground_images', exist_ok=True)
+os.makedirs('testing_files/Generated_images', exist_ok=True)
+# ========================================================
+count=0
+for item in test_dataloader:
+    with torch.no_grad():
+        # ==================forward==================
+        img_SR_coarse, img_SR = model_Generator.forward(item['LR'])
+        img_SR = img_SR.detach().cpu()
+        img_GT = item['HR'].cpu()
+        for i in range(img_SR.size(0)):
+            img = img_GT[i].squeeze()
+            img = (img + 1) / 2
+            im = (img.numpy().transpose(1, 2, 0) * 255).astype(int)
+            cv2.imwrite(f'testing_files/Ground_images/ground_{count}.jpg',
+                        np.array([im[:, :, 2], im[:, :, 1], im[:, :, 0]]).transpose(1, 2, 0))
+            img = img_SR[i].squeeze()
+            img = (img + 1) / 2
+            im = (img.numpy().transpose(1, 2, 0) * 255).astype(int)
+            cv2.imwrite(f'testing_files/Generated_images/{count}.jpg',
+                        np.array([im[:, :, 2], im[:, :, 1], im[:, :, 0]]).transpose(1, 2, 0))
+            count+=1
+    if count>=100:
+        break
 
 
 
-       
+
+
