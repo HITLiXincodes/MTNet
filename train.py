@@ -1,117 +1,107 @@
-from __future__ import print_function
 import torch
-from PIL import Image
-from torch.autograd import Variable
-from utils.timer import Timer
-from utils.logger import Logger
-from utils import utils
-from options.train_options import TrainOptions
-from data import create_dataset
-from models import create_model
+MAE_loss = torch.nn.L1Loss()
+
+import cv2
+import numpy as np
+
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+print("************ NOTE: The torch device is:", device)
+
+# =================== import Dataset ======================
+from Dataset import MyDataset
+from torch.utils.data import DataLoader
+train_input_dir='/home/ubuntu/thumb_data/tra_en1_4'
+train_ground_dir='/home/ubuntu/thumb_data/tra_ori'
+
+test_input_dir="/home/ubuntu/thumb_data/ce_test_en1_4"
+test_ground_dir='/home/ubuntu/thumb_data/ce_test_ori'
+
+training_dataset = MyDataset(train=True, device=device, input_dir=train_input_dir,ground_dir=train_ground_dir)
+train_dataloader = DataLoader(training_dataset, batch_size=8, shuffle=True)
+
+testing_dataset = MyDataset(train=False, device=device, input_dir=test_input_dir,ground_dir=test_ground_dir)
+test_dataloader = DataLoader(testing_dataset, batch_size=8, shuffle=True)
+
+print('The number of training images = %d' % len(training_dataset))
+
+# =================== import Mapping Network =====================
+from model import MTNetModel
+model_Generator = MTNetModel(device)
+# ========================================================
+
+# =================== Save models and logs ===============
 import os
-import torchvision.transforms as transforms
-os.environ["CUDA_VISIBLE_DEVICES"] = '3,4'
-if __name__ == '__main__':
+os.makedirs('training_files', exist_ok=True)
+os.makedirs('training_files/models', exist_ok=True)
+os.makedirs('training_files/Generated_images', exist_ok=True)
+os.makedirs('training_files/logs_train', exist_ok=True)
 
-    def is_image_file(filename):
-        return any(filename.endswith(extension) for extension in [".png", ".jpg", ".jpeg"])   
-        
-    def load_img(filepath):
-        image = Image.open(filepath).convert('RGB')
-        return  image
+with open('training_files/logs_train/generator.csv', 'w') as f:
+    f.write("epoch, Pixel_loss\n")
 
-    opt = TrainOptions().parse()
+with open('training_files/logs_train/log.txt', 'w') as f:
+    pass
+for item in test_dataloader:
+    pass
+real_image = item['HR'].cpu()
+for i in range(real_image.size(0)):
+    os.makedirs(f'training_files/Generated_images/{i}', exist_ok=True)
+    img = real_image[i].squeeze()
+    img = (img+1)/2
+    im = (img.numpy().transpose(1, 2, 0) * 255).astype(int)
+    cv2.imwrite(f'training_files/Generated_images/{i}/real_image.jpg',
+                np.array([im[:, :, 2], im[:, :, 1], im[:, :, 0]]).transpose(1, 2, 0))
+# ========================================================
+num_epochs = 100
+for epoch in range(num_epochs):
+    iteration = 0
+    model_Generator.netG.train()
+    for item in train_dataloader:
+        # ==================forward==================
+        img_SR_coarse, img_SR = model_Generator.forward(item['LR'])
+        # ==================backward=================
+        loss = model_Generator.optimize_parameters(img_SR_coarse,img_SR,item['HR'])
+        # ==================log======================
+        iteration += 1
+        if iteration % 200 == 0:
+            with open('training_files/logs_train/log.txt', 'a') as f:
+                f.write(
+                    f'epoch:{epoch + 1}, \t iteration: {iteration}, \t pixel_loss:{loss.data.item()}\n')
+    # ******************** Eval Genrator ********************
+    model_Generator.netG.eval()
+    pixel_loss_test = 0
+    iteration = 0
+    for item in test_dataloader:
+        iteration += 1
+        # ==================forward==================
+        with torch.no_grad():
+            img_SR_coarse, img_SR = model_Generator.forward(item['LR'])
+            pixel_loss = MAE_loss(item['HR'], img_SR)
+            pixel_loss_test += pixel_loss.item()
 
-    dataset = create_dataset(opt)  
-    dataset_size = len(dataset)   
-    print('The number of training images = %d' % dataset_size)
+    with open('training_files/logs_train/generator.csv', 'a') as f:
+        f.write(
+            f"{epoch + 1}, {pixel_loss_test / iteration}\n")
 
-    model = create_model(opt)
-    model.setup(opt)
-        
-    logger = Logger(opt)
-    timer = Timer()
-    to_tensor = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                ])
+    img_SR = img_SR.detach().cpu()
+    for i in range(img_SR.size(0)):
+        img = img_SR[i].squeeze()
+        img = (img + 1) / 2
+        im = (img.numpy().transpose(1, 2, 0) * 255).astype(int)
+        cv2.imwrite(f'training_files/Generated_images/{i}/epoch_{epoch + 1}.jpg',
+                    np.array([im[:, :, 2], im[:, :, 1], im[:, :, 0]]).transpose(1, 2, 0))
 
-    single_epoch_iters = (dataset_size // opt.batch_size)
-    total_iters = opt.total_epochs * single_epoch_iters 
-    cur_iters = opt.resume_iter + opt.resume_epoch * single_epoch_iters
-    start_iter = opt.resume_iter
-    print('Start training from epoch: {:05d}; iter: {:07d}'.format(opt.resume_epoch, opt.resume_iter))
-for epoch in range(opt.resume_epoch, opt.total_epochs + 1):    
-    for i, data in enumerate(dataset, start=start_iter):
-        cur_iters += 1
-        logger.set_current_iter(cur_iters)
-        # =================== load data ===============
-        model.set_input(data, cur_iters)
-        timer.update_time('DataTime')
+    # *******************************************************
 
-        # =================== model train ===============
-        model.forward()
-        timer.update_time('Forward')
-        model.optimize_parameters()
-        timer.update_time('Backward')
-        loss = model.get_current_losses()
-        loss.update(model.get_lr())
-        logger.record_losses(loss)
+    # Save model_Generator
+    if epoch % 10 == 0:
+        torch.save(model_Generator.netG.state_dict(), 'training_files/models/Generator_{}.pth'.format(epoch + 1))
+# ========================================================
 
-        # =================== save model and visualize ===============
-        if cur_iters % opt.print_freq == 0:
-            print('Model log directory: {}'.format(opt.expr_dir))
-            epoch_progress = '{:03d}|{:05d}/{:05d}'.format(epoch, i, single_epoch_iters)
-            logger.printIterSummary(epoch_progress, cur_iters, total_iters, timer)
 
-        if cur_iters % opt.visual_freq == 0:
-            visual_imgs = model.get_current_visuals()
-            logger.record_images(visual_imgs)
-
-        info = {'resume_epoch': epoch, 'resume_iter': i+1}
-        if cur_iters % opt.save_iter_freq == 0 and cur_iters>=160000:
-            print('saving current model (epoch %d, iters %d)' % (epoch, cur_iters))
-            if not os.path.exists("result/"+str(cur_iters)):
-                os.makedirs("result/"+str(cur_iters))
-
-            if not os.path.exists("result_coarse/"+str(cur_iters)):
-                os.makedirs("result_coarse/"+str(cur_iters))
-            save_suffix = 'iter_%d' % cur_iters 
-            model.save_networks(save_suffix, info)
-            avg_psnr = 0
-            image_ldir = "/home/ubuntu/thumb_data/ce_test_en2_4/"
-            image_filenames = [x for x in os.listdir(image_ldir) if is_image_file(x)]
-            transform_list = [transforms.ToTensor()]
-            transform = transforms.Compose(transform_list)
-            for image_name in image_filenames:
-                imgg = load_img(image_ldir + image_name)
-                imgg = imgg.resize((32,32),Image.BICUBIC)
-                img = imgg.resize((128, 128), Image.BICUBIC)
-
-                input = to_tensor(img)
-                with torch.no_grad():
-                    input = Variable(input).view(1, -1, 128, 128)
-                network = model.netG
-                network.eval()
-                out1 , out = network(input)
-
-                output_sr_img = utils.tensor_to_img(out, normal=True)
-                save_img = Image.fromarray(output_sr_img)
-                save_img.save("result/{}/{}".format(cur_iters, image_name))
-
-                output_sr_img = utils.tensor_to_img(out1, normal=True)
-                save_img = Image.fromarray(output_sr_img)
-                save_img.save("result_coarse/{}/{}".format(cur_iters, image_name))
-
-        if cur_iters % opt.save_latest_freq == 0:
-            print('saving the latest model (epoch %d, iters %d)' % (epoch, cur_iters))
-            model.save_networks('latest', info)
-
-        if opt.debug: break
-    if opt.debug and epoch > 5: exit()
-
-    
-    
 
 
 
