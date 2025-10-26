@@ -32,11 +32,12 @@ robust defense mechanisms are required.
 
 ## How to use
 ### Train
-You can re-train the model easily by running the train.py file.
+To retrain the model, simply run train.py.
 ```
 python train.py
 ```
-You need to modify the relevant setting at first in the file train.py.
+You need to modify the relevant settings in the train.py file first.
+**Make sure there are no subdirectories and that all encrypted images and ground truth files share the same filenames.**
 
 ```
 input_dir: the path that you put the encrypted images
@@ -44,18 +45,16 @@ ground_dir: the path that you put the ground truth
 lr_size: the size of thumbnails
 hr_size: the size of reconstructed images
 ```
-**make sure there is no sub-dirs and all the encrypted images and ground truth share the same name**
- 
 
 ### Test
-You can get the reconstructed images by running the test.py file.
+You can obtain the reconstructed images by running the test.py file.
+Make sure to set the correct file paths and model weights path. For more details, please refer to test.py.
 ```
 python test.py
 ```
-You need to set the correct file paths and the model weigthts path. For more detail, please refer to the test.py.
 
 ### Pretrained-Weights
-We offer the pretrained weights that can be download as follows:
+You can download the pretrained weights using the following links:
 | Model | Description | Download link|
 |:----------:|:------------:| :----------:|
 | BE-4 | BE-TPE with block size 4 |[Baidu Yun (Code:m7u9)](https://pan.baidu.com/s/146fQ2hCi8Pp4AMgXsVl91w)|
