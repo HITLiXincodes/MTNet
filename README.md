@@ -90,6 +90,7 @@ to_tensor = transforms.Compose([
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
 # image path
+# We have provided some BE-TPE encrypted images in the example folder
 input_img_path = " "
 img = Image.open(input_img_path).convert('RGB')
 img = img.resize((32, 32), Image.BICUBIC)
