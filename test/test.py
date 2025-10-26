@@ -1,6 +1,4 @@
 import torch
-MAE_loss = torch.nn.L1Loss()
-
 import cv2
 import numpy as np
 
@@ -38,7 +36,6 @@ os.makedirs('testing_files', exist_ok=True)
 os.makedirs('testing_files/Ground_images', exist_ok=True)
 os.makedirs('testing_files/Generated_images', exist_ok=True)
 # ========================================================
-count=0
 for item in test_dataloader:
     with torch.no_grad():
         # ==================forward==================
@@ -56,11 +53,3 @@ for item in test_dataloader:
             im = (img.numpy().transpose(1, 2, 0) * 255).astype(int)
             cv2.imwrite(f'testing_files/Generated_images/{count}.jpg',
                         np.array([im[:, :, 2], im[:, :, 1], im[:, :, 0]]).transpose(1, 2, 0))
-            count+=1
-    if count>=100:
-        break
-
-
-
-
-
