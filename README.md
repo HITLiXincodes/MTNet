@@ -112,5 +112,5 @@ with torch.no_grad():
 ## Citation
 Please cite our paper if this code helps you
 ```
-
+X. Li, G. Zhu, H. Zhang, T. Xiang, X. Luo and S. Kwong, "Information Disclosure Risk of Thumbnail-Preserving Encryption," in IEEE Transactions on Multimedia, doi: 10.1109/TMM.2026.3660154.
 ```
